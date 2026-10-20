@@ -1,0 +1,257 @@
+name: build-launcher
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Write sources
+        run: |
+          mkdir -p work/src/com/example/cleanlauncher work/obj work/out
+          cat > work/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.example.cleanlauncher">
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+              <application android:label="Inicio"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTask"
+                      android:stateNotNeeded="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.HOME" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > work/src/com/example/cleanlauncher/MainActivity.java <<'EOF'
+          package com.example.cleanlauncher;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.content.pm.ResolveInfo;
+          import android.graphics.Color;
+          import android.graphics.drawable.ColorDrawable;
+          import android.graphics.drawable.Drawable;
+          import android.graphics.drawable.GradientDrawable;
+          import android.os.Bundle;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.AdapterView;
+          import android.widget.BaseAdapter;
+          import android.widget.GridView;
+          import android.widget.ImageView;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+          import java.util.ArrayList;
+          import java.util.Collections;
+          import java.util.Comparator;
+          import java.util.HashSet;
+          import java.util.List;
+          import java.util.Set;
+
+          public class MainActivity extends Activity {
+              static class App {
+                  String label;
+                  Drawable img;
+                  boolean banner;
+                  Intent intent;
+              }
+
+              private final List<App> apps = new ArrayList<App>();
+              private BaseAdapter adapter;
+              private float density;
+
+              private int dp(int v) {
+                  return (int) (v * density);
+              }
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  density = getResources().getDisplayMetrics().density;
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setBackground(new GradientDrawable(
+                      GradientDrawable.Orientation.TOP_BOTTOM,
+                      new int[] {0xFF1B1B22, 0xFF000000}));
+                  root.setPadding(dp(48), dp(32), dp(48), 0);
+
+                  TextView title = new TextView(this);
+                  title.setText("Inicio");
+                  title.setTextColor(Color.WHITE);
+                  title.setTextSize(28);
+                  title.setPadding(dp(10), 0, 0, dp(16));
+                  root.addView(title);
+
+                  GridView grid = new GridView(this);
+                  grid.setNumColumns(GridView.AUTO_FIT);
+                  grid.setColumnWidth(dp(196));
+                  grid.setVerticalSpacing(dp(8));
+                  grid.setClipToPadding(false);
+                  grid.setSelector(new ColorDrawable(0x33FFFFFF));
+                  grid.setDrawSelectorOnTop(true);
+                  grid.setPadding(0, 0, 0, dp(32));
+
+                  adapter = new BaseAdapter() {
+                      public int getCount() { return apps.size(); }
+                      public Object getItem(int i) { return apps.get(i); }
+                      public long getItemId(int i) { return i; }
+                      public View getView(int i, View v, ViewGroup p) {
+                          LinearLayout cell;
+                          ImageView iv;
+                          TextView tv;
+                          if (v == null) {
+                              cell = new LinearLayout(MainActivity.this);
+                              cell.setOrientation(LinearLayout.VERTICAL);
+                              cell.setGravity(Gravity.CENTER_HORIZONTAL);
+                              cell.setPadding(dp(10), dp(10), dp(10), dp(10));
+                              iv = new ImageView(MainActivity.this);
+                              iv.setLayoutParams(new LinearLayout.LayoutParams(dp(176), dp(99)));
+                              GradientDrawable bg = new GradientDrawable();
+                              bg.setColor(0xFF1C1C1E);
+                              bg.setCornerRadius(dp(14));
+                              iv.setBackground(bg);
+                              iv.setClipToOutline(true);
+                              tv = new TextView(MainActivity.this);
+                              tv.setTextColor(0xFFDDDDDD);
+                              tv.setTextSize(14);
+                              tv.setSingleLine(true);
+                              tv.setGravity(Gravity.CENTER);
+                              tv.setPadding(0, dp(6), 0, 0);
+                              cell.addView(iv);
+                              cell.addView(tv);
+                              cell.setTag(new View[] {iv, tv});
+                          } else {
+                              cell = (LinearLayout) v;
+                              View[] t = (View[]) cell.getTag();
+                              iv = (ImageView) t[0];
+                              tv = (TextView) t[1];
+                          }
+                          App a = apps.get(i);
+                          iv.setImageDrawable(a.img);
+                          if (a.banner) {
+                              iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                              iv.setPadding(0, 0, 0, 0);
+                          } else {
+                              iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+                              iv.setPadding(dp(24), dp(12), dp(24), dp(12));
+                          }
+                          tv.setText(a.label);
+                          return cell;
+                      }
+                  };
+                  grid.setAdapter(adapter);
+                  grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+                      public void onItemClick(AdapterView<?> parent, View view, int pos, long id) {
+                          try {
+                              startActivity(apps.get(pos).intent);
+                          } catch (Exception e) {
+                              // app sin actividad lanzable: se ignora
+                          }
+                      }
+                  });
+                  root.addView(grid, new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+                  setContentView(root);
+                  grid.requestFocus();
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  loadApps();
+              }
+
+              @Override
+              public void onBackPressed() {
+                  // Un launcher no sale con Atras.
+              }
+
+              private void loadApps() {
+                  PackageManager pm = getPackageManager();
+                  Set<String> seen = new HashSet<String>();
+                  List<App> list = new ArrayList<App>();
+                  String[] cats = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
+                  for (String cat : cats) {
+                      Intent q = new Intent(Intent.ACTION_MAIN).addCategory(cat);
+                      for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
+                          String pkg = ri.activityInfo.packageName;
+                          if (pkg.equals(getPackageName()) || !seen.add(pkg)) continue;
+                          App a = new App();
+                          a.label = String.valueOf(ri.loadLabel(pm));
+                          Drawable bn = ri.activityInfo.loadBanner(pm);
+                          if (bn != null) {
+                              a.img = bn;
+                              a.banner = true;
+                          } else {
+                              a.img = ri.loadIcon(pm);
+                          }
+                          a.intent = new Intent(Intent.ACTION_MAIN)
+                              .addCategory(cat)
+                              .setClassName(pkg, ri.activityInfo.name)
+                              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          list.add(a);
+                      }
+                  }
+                  Collections.sort(list, new Comparator<App>() {
+                      public int compare(App x, App y) {
+                          return x.label.compareToIgnoreCase(y.label);
+                      }
+                  });
+                  apps.clear();
+                  apps.addAll(list);
+                  adapter.notifyDataSetChanged();
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: |
+          set -e
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          JAR="$(ls -d "$ANDROID_HOME"/platforms/android-* | sort -V | tail -1)/android.jar"
+          echo "build-tools: $BT"
+          echo "android.jar: $JAR"
+          cd work
+          "$BT/aapt2" link -o base.apk -I "$JAR" --manifest AndroidManifest.xml \
+            --min-sdk-version 26 --target-sdk-version 29
+          javac -source 8 -target 8 -classpath "$JAR" -d obj \
+            src/com/example/cleanlauncher/MainActivity.java
+          "$BT/d8" --release --min-api 26 --lib "$JAR" --output out \
+            $(find obj -name '*.class')
+          zip -uj base.apk out/classes.dex
+          "$BT/zipalign" -f -p 4 base.apk aligned.apk
+          keytool -genkeypair -keystore ks.jks -storepass android -keypass android \
+            -alias k -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Launcher"
+          "$BT/apksigner" sign --ks ks.jks --ks-pass pass:android --key-pass pass:android \
+            --out launcher.apk aligned.apk
+          "$BT/apksigner" verify launcher.apk
+          ls -l launcher.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: launcher
+
+          files: work/launcher.apk
