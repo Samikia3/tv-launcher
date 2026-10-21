@@ -48,21 +48,25 @@ jobs:
           import android.content.Intent;
           import android.content.pm.PackageManager;
           import android.content.pm.ResolveInfo;
+          import android.graphics.Bitmap;
+          import android.graphics.BitmapFactory;
           import android.graphics.Color;
-          import android.graphics.drawable.ColorDrawable;
           import android.graphics.drawable.Drawable;
           import android.graphics.drawable.GradientDrawable;
           import android.os.Bundle;
+          import android.provider.Settings;
           import android.view.Gravity;
           import android.view.View;
           import android.view.ViewGroup;
-          import android.widget.AdapterView;
-          import android.widget.BaseAdapter;
-          import android.widget.GridView;
+          import android.widget.FrameLayout;
+          import android.widget.HorizontalScrollView;
           import android.widget.ImageView;
           import android.widget.LinearLayout;
+          import android.widget.TextClock;
           import android.widget.TextView;
+          import java.io.File;
           import java.util.ArrayList;
+          import java.util.Arrays;
           import java.util.Collections;
           import java.util.Comparator;
           import java.util.HashSet;
@@ -71,14 +75,35 @@ jobs:
 
           public class MainActivity extends Activity {
               static class App {
+                  String pkg;
                   String label;
                   Drawable img;
                   boolean banner;
                   Intent intent;
               }
 
-              private final List<App> apps = new ArrayList<App>();
-              private BaseAdapter adapter;
+              // Apps que salen primero, en este orden. El resto va por orden alfabetico.
+              private static final String[] PRIORITY = {
+                  "com.google.android.youtube.tv",
+                  "com.netflix.ninja",
+                  "com.amazon.amazonvideo.livingroom",
+                  "com.spotify.tv.android",
+                  "com.aspiro.tidal",
+                  "tv.twitch.android.app",
+                  "com.tcl.tv"
+              };
+
+              // Apps que no se muestran.
+              private static final String[] HIDE = {
+                  "com.tcl.tv.tclhome_passive",
+                  "com.tcl.usercenter",
+                  "org.chromium.webview_shell"
+              };
+
+              private LinearLayout row;
+              private HorizontalScrollView scroller;
+              private TextView nameView;
+              private ImageView wallpaper;
               private float density;
 
               private int dp(int v) {
@@ -90,96 +115,88 @@ jobs:
                   super.onCreate(b);
                   density = getResources().getDisplayMetrics().density;
 
+                  FrameLayout frame = new FrameLayout(this);
+                  frame.setBackground(new GradientDrawable(
+                      GradientDrawable.Orientation.TOP_BOTTOM,
+                      new int[] {0xFF2B2D42, 0xFF0B0B10}));
+
+                  wallpaper = new ImageView(this);
+                  wallpaper.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                  frame.addView(wallpaper, new FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+                  View shade = new View(this);
+                  shade.setBackground(new GradientDrawable(
+                      GradientDrawable.Orientation.TOP_BOTTOM,
+                      new int[] {0x66000000, 0x00000000, 0xCC000000}));
+                  frame.addView(shade, new FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
                   LinearLayout root = new LinearLayout(this);
                   root.setOrientation(LinearLayout.VERTICAL);
-                  root.setBackground(new GradientDrawable(
-                      GradientDrawable.Orientation.TOP_BOTTOM,
-                      new int[] {0xFF1B1B22, 0xFF000000}));
-                  root.setPadding(dp(48), dp(32), dp(48), 0);
+                  root.setPadding(dp(48), dp(28), dp(48), dp(40));
 
-                  TextView title = new TextView(this);
-                  title.setText("Inicio");
-                  title.setTextColor(Color.WHITE);
-                  title.setTextSize(28);
-                  title.setPadding(dp(10), 0, 0, dp(16));
-                  root.addView(title);
+                  // Reloj y fecha, arriba a la derecha
+                  LinearLayout clockBox = new LinearLayout(this);
+                  clockBox.setOrientation(LinearLayout.VERTICAL);
+                  clockBox.setGravity(Gravity.END);
+                  TextClock time = new TextClock(this);
+                  time.setFormat24Hour("HH:mm");
+                  time.setFormat12Hour("HH:mm");
+                  time.setTextColor(Color.WHITE);
+                  time.setTextSize(30);
+                  time.setGravity(Gravity.END);
+                  clockBox.addView(time);
+                  TextClock date = new TextClock(this);
+                  date.setFormat24Hour("EEEE d 'de' MMMM");
+                  date.setFormat12Hour("EEEE d 'de' MMMM");
+                  date.setTextColor(0xFFCCCCCC);
+                  date.setTextSize(14);
+                  date.setGravity(Gravity.END);
+                  clockBox.addView(date);
+                  LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  clp.gravity = Gravity.END;
+                  root.addView(clockBox, clp);
 
-                  GridView grid = new GridView(this);
-                  grid.setNumColumns(GridView.AUTO_FIT);
-                  grid.setColumnWidth(dp(196));
-                  grid.setVerticalSpacing(dp(8));
-                  grid.setClipToPadding(false);
-                  grid.setSelector(new ColorDrawable(0x33FFFFFF));
-                  grid.setDrawSelectorOnTop(true);
-                  grid.setPadding(0, 0, 0, dp(32));
-
-                  adapter = new BaseAdapter() {
-                      public int getCount() { return apps.size(); }
-                      public Object getItem(int i) { return apps.get(i); }
-                      public long getItemId(int i) { return i; }
-                      public View getView(int i, View v, ViewGroup p) {
-                          LinearLayout cell;
-                          ImageView iv;
-                          TextView tv;
-                          if (v == null) {
-                              cell = new LinearLayout(MainActivity.this);
-                              cell.setOrientation(LinearLayout.VERTICAL);
-                              cell.setGravity(Gravity.CENTER_HORIZONTAL);
-                              cell.setPadding(dp(10), dp(10), dp(10), dp(10));
-                              iv = new ImageView(MainActivity.this);
-                              iv.setLayoutParams(new LinearLayout.LayoutParams(dp(176), dp(99)));
-                              GradientDrawable bg = new GradientDrawable();
-                              bg.setColor(0xFF1C1C1E);
-                              bg.setCornerRadius(dp(14));
-                              iv.setBackground(bg);
-                              iv.setClipToOutline(true);
-                              tv = new TextView(MainActivity.this);
-                              tv.setTextColor(0xFFDDDDDD);
-                              tv.setTextSize(14);
-                              tv.setSingleLine(true);
-                              tv.setGravity(Gravity.CENTER);
-                              tv.setPadding(0, dp(6), 0, 0);
-                              cell.addView(iv);
-                              cell.addView(tv);
-                              cell.setTag(new View[] {iv, tv});
-                          } else {
-                              cell = (LinearLayout) v;
-                              View[] t = (View[]) cell.getTag();
-                              iv = (ImageView) t[0];
-                              tv = (TextView) t[1];
-                          }
-                          App a = apps.get(i);
-                          iv.setImageDrawable(a.img);
-                          if (a.banner) {
-                              iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                              iv.setPadding(0, 0, 0, 0);
-                          } else {
-                              iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-                              iv.setPadding(dp(24), dp(12), dp(24), dp(12));
-                          }
-                          tv.setText(a.label);
-                          return cell;
-                      }
-                  };
-                  grid.setAdapter(adapter);
-                  grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-                      public void onItemClick(AdapterView<?> parent, View view, int pos, long id) {
-                          try {
-                              startActivity(apps.get(pos).intent);
-                          } catch (Exception e) {
-                              // app sin actividad lanzable: se ignora
-                          }
-                      }
-                  });
-                  root.addView(grid, new LinearLayout.LayoutParams(
+                  // Espacio flexible: empuja la fila hacia abajo
+                  root.addView(new View(this), new LinearLayout.LayoutParams(
                       ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-                  setContentView(root);
-                  grid.requestFocus();
+
+                  // Nombre de la app enfocada
+                  nameView = new TextView(this);
+                  nameView.setTextColor(Color.WHITE);
+                  nameView.setTextSize(28);
+                  nameView.setSingleLine(true);
+                  nameView.setPadding(dp(36), 0, 0, dp(4));
+                  root.addView(nameView, new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                  // Fila horizontal de fichas
+                  scroller = new HorizontalScrollView(this);
+                  scroller.setHorizontalScrollBarEnabled(false);
+                  scroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
+                  scroller.setClipToPadding(false);
+                  scroller.setClipChildren(false);
+                  scroller.setPadding(dp(24), dp(28), dp(24), dp(28));
+                  row = new LinearLayout(this);
+                  row.setOrientation(LinearLayout.HORIZONTAL);
+                  row.setClipChildren(false);
+                  row.setClipToPadding(false);
+                  scroller.addView(row, new FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                  root.addView(scroller, new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                  frame.addView(root, new FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                  setContentView(frame);
               }
 
               @Override
               protected void onResume() {
                   super.onResume();
+                  loadWallpaper();
                   loadApps();
               }
 
@@ -188,17 +205,100 @@ jobs:
                   // Un launcher no sale con Atras.
               }
 
+              private View makeCell(final App a) {
+                  final FrameLayout cell = new FrameLayout(this);
+                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(224), dp(126));
+                  lp.setMargins(dp(12), 0, dp(12), 0);
+                  cell.setLayoutParams(lp);
+                  cell.setFocusable(true);
+                  cell.setClickable(true);
+
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(0xFF2A2A2E);
+                  bg.setCornerRadius(dp(16));
+                  cell.setBackground(bg);
+                  cell.setClipToOutline(true);
+
+                  final GradientDrawable ring = new GradientDrawable();
+                  ring.setColor(Color.TRANSPARENT);
+                  ring.setCornerRadius(dp(16));
+                  ring.setStroke(dp(3), Color.WHITE);
+
+                  ImageView iv = new ImageView(this);
+                  iv.setImageDrawable(a.img);
+                  if (a.banner) {
+                      iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                  } else {
+                      iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+                      iv.setPadding(dp(56), dp(24), dp(56), dp(24));
+                  }
+                  cell.addView(iv, new FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+                  cell.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                      public void onFocusChange(View v, boolean has) {
+                          if (has) {
+                              cell.setForeground(ring);
+                              cell.setElevation(dp(12));
+                              cell.animate().scaleX(1.14f).scaleY(1.14f).setDuration(140).start();
+                              nameView.setText(a.label);
+                              int x = v.getLeft() + v.getWidth() / 2 - scroller.getWidth() / 2;
+                              scroller.smoothScrollTo(Math.max(0, x), 0);
+                          } else {
+                              cell.setForeground(null);
+                              cell.setElevation(0);
+                              cell.animate().scaleX(1f).scaleY(1f).setDuration(140).start();
+                          }
+                      }
+                  });
+                  cell.setOnClickListener(new View.OnClickListener() {
+                      public void onClick(View v) {
+                          try {
+                              startActivity(a.intent);
+                          } catch (Exception e) {
+                              // app sin actividad lanzable: se ignora
+                          }
+                      }
+                  });
+                  return cell;
+              }
+
+              private void loadWallpaper() {
+                  try {
+                      File dir = getExternalFilesDir(null);
+                      if (dir == null) return;
+                      File f = new File(dir, "fondo.jpg");
+                      if (!f.exists()) {
+                          wallpaper.setImageDrawable(null);
+                          return;
+                      }
+                      BitmapFactory.Options o = new BitmapFactory.Options();
+                      o.inJustDecodeBounds = true;
+                      BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+                      int s = 1;
+                      while (o.outWidth / (s * 2) >= 1920) s *= 2;
+                      o = new BitmapFactory.Options();
+                      o.inSampleSize = s;
+                      Bitmap bmp = BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+                      wallpaper.setImageBitmap(bmp);
+                  } catch (Throwable t) {
+                      // sin fondo propio: se queda el degradado
+                  }
+              }
+
               private void loadApps() {
                   PackageManager pm = getPackageManager();
                   Set<String> seen = new HashSet<String>();
+                  Set<String> hide = new HashSet<String>(Arrays.asList(HIDE));
                   List<App> list = new ArrayList<App>();
                   String[] cats = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
                   for (String cat : cats) {
                       Intent q = new Intent(Intent.ACTION_MAIN).addCategory(cat);
                       for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
                           String pkg = ri.activityInfo.packageName;
-                          if (pkg.equals(getPackageName()) || !seen.add(pkg)) continue;
+                          if (pkg.equals(getPackageName()) || hide.contains(pkg) || !seen.add(pkg)) continue;
                           App a = new App();
+                          a.pkg = pkg;
                           a.label = String.valueOf(ri.loadLabel(pm));
                           Drawable bn = ri.activityInfo.loadBanner(pm);
                           if (bn != null) {
@@ -214,14 +314,41 @@ jobs:
                           list.add(a);
                       }
                   }
+
+                  // Ficha de Ajustes propia, para no quedarnos sin acceso a la configuracion
+                  if (!seen.contains("com.android.tv.settings")) {
+                      try {
+                          App s = new App();
+                          s.pkg = "com.android.tv.settings";
+                          s.label = "Ajustes";
+                          s.img = pm.getApplicationIcon("com.android.tv.settings");
+                          s.intent = new Intent(Settings.ACTION_SETTINGS)
+                              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          list.add(s);
+                      } catch (Exception e) {
+                          // sin icono de Ajustes: se omite la ficha
+                      }
+                  }
+
+                  final List<String> order = Arrays.asList(PRIORITY);
                   Collections.sort(list, new Comparator<App>() {
                       public int compare(App x, App y) {
+                          int ix = order.indexOf(x.pkg);
+                          int iy = order.indexOf(y.pkg);
+                          if (ix < 0) ix = 1000;
+                          if (iy < 0) iy = 1000;
+                          if (ix != iy) return ix < iy ? -1 : 1;
                           return x.label.compareToIgnoreCase(y.label);
                       }
                   });
-                  apps.clear();
-                  apps.addAll(list);
-                  adapter.notifyDataSetChanged();
+
+                  row.removeAllViews();
+                  for (App a : list) {
+                      row.addView(makeCell(a));
+                  }
+                  if (row.getChildCount() > 0) {
+                      row.getChildAt(0).requestFocus();
+                  }
               }
           }
           EOF
